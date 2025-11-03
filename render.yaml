@@ -3,7 +3,7 @@ services:
     name: HypeSniff
     env: python
     branch: main
-    buildCommand: pip install -r requirements.txt
+    buildCommand: bash build.sh
     startCommand: gunicorn app:app
     plan: free
     envVars: []
