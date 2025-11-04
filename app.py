@@ -20,8 +20,8 @@ app = Flask(__name__)
 _cached_html = None
 
 
-def render_notebook(timeout=600, use_cache=True):
-    """Execute the notebook and return HTML. This is intentionally minimal."""
+def render_notebook(timeout=1200, use_cache=True):
+    """Execute the notebook and return HTML. Increased timeout for complex notebooks."""
     global _cached_html
     
     # Return cached version if available and caching is enabled
@@ -54,7 +54,14 @@ def render_notebook(timeout=600, use_cache=True):
 
     # Create the NotebookClient and execute. Explicitly request the 'python3'
     # kernel name so it uses the kernelspec we just created.
-    client = NotebookClient(nb, timeout=timeout, kernel_name="python3")
+    # Allow errors to show which cell failed
+    client = NotebookClient(
+        nb, 
+        timeout=timeout, 
+        kernel_name="python3",
+        allow_errors=True,  # Continue execution even if a cell fails
+        store_widget_state=True  # Preserve interactive widgets
+    )
     client.execute()
 
     # Configure HTMLExporter to properly embed interactive plots
@@ -79,9 +86,26 @@ def index():
     try:
         html = render_notebook(use_cache=True)
         return Response(html, mimetype="text/html")
-    except Exception:
+    except Exception as e:
         tb = traceback.format_exc()
-        return Response(f"<h1>Error rendering notebook</h1><pre>{tb}</pre>", mimetype="text/html"), 500
+        error_msg = f"""
+        <html>
+        <head><title>Error Loading Notebook</title></head>
+        <body>
+            <h1>⚠️ Error Rendering Notebook</h1>
+            <p><strong>Error:</strong> {str(e)}</p>
+            <h2>Troubleshooting:</h2>
+            <ul>
+                <li>First load takes 10-15 minutes (notebook execution)</li>
+                <li>Try refreshing the page in a few minutes</li>
+                <li>Visit <a href="/refresh">/refresh</a> to force reload</li>
+            </ul>
+            <h2>Full Error Details:</h2>
+            <pre style="background:#f4f4f4;padding:15px;overflow:auto;">{tb}</pre>
+        </body>
+        </html>
+        """
+        return Response(error_msg, mimetype="text/html"), 500
 
 
 @app.route("/refresh")
@@ -92,9 +116,26 @@ def refresh():
     try:
         html = render_notebook(use_cache=False)
         return Response(html, mimetype="text/html")
-    except Exception:
+    except Exception as e:
         tb = traceback.format_exc()
-        return Response(f"<h1>Error rendering notebook</h1><pre>{tb}</pre>", mimetype="text/html"), 500
+        error_msg = f"""
+        <html>
+        <head><title>Error Loading Notebook</title></head>
+        <body>
+            <h1>⚠️ Error Rendering Notebook</h1>
+            <p><strong>Error:</strong> {str(e)}</p>
+            <h2>Full Error Details:</h2>
+            <pre style="background:#f4f4f4;padding:15px;overflow:auto;">{tb}</pre>
+        </body>
+        </html>
+        """
+        return Response(error_msg, mimetype="text/html"), 500
+
+
+@app.route("/health")
+def health():
+    """Health check endpoint."""
+    return {"status": "ok", "cached": _cached_html is not None}
 
 
 if __name__ == "__main__":
