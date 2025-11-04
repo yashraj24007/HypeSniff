@@ -16,9 +16,18 @@ NOTEBOOK_PATH = ROOT / "DAV_project_1_v2.ipynb"
 
 app = Flask(__name__)
 
+# Cache the rendered HTML to avoid re-executing on every request
+_cached_html = None
 
-def render_notebook(timeout=600):
+
+def render_notebook(timeout=600, use_cache=True):
     """Execute the notebook and return HTML. This is intentionally minimal."""
+    global _cached_html
+    
+    # Return cached version if available and caching is enabled
+    if use_cache and _cached_html is not None:
+        return _cached_html
+    
     if not NOTEBOOK_PATH.exists():
         raise FileNotFoundError(f"Notebook not found at {NOTEBOOK_PATH}")
 
@@ -48,15 +57,40 @@ def render_notebook(timeout=600):
     client = NotebookClient(nb, timeout=timeout, kernel_name="python3")
     client.execute()
 
+    # Configure HTMLExporter to properly embed interactive plots
     exporter = HTMLExporter()
-    body, _ = exporter.from_notebook_node(nb)
+    # Use the 'lab' template which includes better support for interactive outputs
+    # and ensures Plotly/widget resources are included
+    exporter.template_name = 'lab'
+    
+    # Alternative: you can also configure to embed resources
+    # exporter.exclude_input = False  # Keep code cells visible
+    
+    body, resources = exporter.from_notebook_node(nb)
+    
+    # Cache the result
+    _cached_html = body
+    
     return body
 
 
 @app.route("/")
 def index():
     try:
-        html = render_notebook()
+        html = render_notebook(use_cache=True)
+        return Response(html, mimetype="text/html")
+    except Exception:
+        tb = traceback.format_exc()
+        return Response(f"<h1>Error rendering notebook</h1><pre>{tb}</pre>", mimetype="text/html"), 500
+
+
+@app.route("/refresh")
+def refresh():
+    """Force re-render of the notebook (clears cache)."""
+    global _cached_html
+    _cached_html = None
+    try:
+        html = render_notebook(use_cache=False)
         return Response(html, mimetype="text/html")
     except Exception:
         tb = traceback.format_exc()
